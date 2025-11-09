@@ -2,6 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 215 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 15%;
+
+    --primary: 185 80% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 14 85% 62%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 185 20% 96%;
+    --muted-foreground: 215 15% 50%;
+
+    --accent: 185 70% 95%;
+    --accent-foreground: 185 80% 25%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 185 20% 88%;
+    --input: 185 20% 88%;
+    --ring: 185 80% 42%;
+
+    --radius: 0.75rem;
+    
+    --shadow-elevated: 0 10px 40px -10px hsl(185 50% 40% / 0.15);
+    --shadow-card: 0 4px 20px -4px hsl(185 40% 30% / 0.1);
+  }
+
+  .dark {
+    --background: 215 30% 8%;
+    --foreground: 185 20% 95%;
+
+    --card: 215 28% 12%;
+    --card-foreground: 185 20% 95%;
+
+    --popover: 215 28% 12%;
+    --popover-foreground: 185 20% 95%;
+
+    --primary: 185 75% 48%;
+    --primary-foreground: 215 30% 8%;
+
+    --secondary: 14 80% 58%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 215 20% 18%;
+    --muted-foreground: 185 15% 65%;
+
+    --accent: 185 40% 20%;
+    --accent-foreground: 185 75% 65%;
+
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 20% 22%;
+    --input: 215 20% 22%;
+    --ring: 185 75% 48%;
+    
+    --shadow-elevated: 0 10px 40px -10px hsl(0 0% 0% / 0.4);
+    --shadow-card: 0 4px 20px -4px hsl(0 0% 0% / 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
 @keyframes bubble-pop {
   0% {
     transform: scale(0.8);
@@ -53,7 +132,7 @@
 /* Modern scrollbar for transcript container */
 .transcript-container {
   scrollbar-width: thin;
-  scrollbar-color: rgba(155, 155, 155, 0.5) transparent;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
 }
 
 .transcript-container::-webkit-scrollbar {
@@ -65,17 +144,7 @@
 }
 
 .transcript-container::-webkit-scrollbar-thumb {
-  background-color: rgba(155, 155, 155, 0.5);
+  background-color: hsl(var(--muted-foreground) / 0.3);
   border-radius: 20px;
   border: transparent;
-}
-
-:root {
-  color-scheme: light dark;
-}
-
-@layer base {
-  body {
-    @apply antialiased text-gray-900 dark:text-gray-100;
-  }
 }

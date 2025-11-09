@@ -168,11 +168,12 @@ export default function App() {
         } else if (data.type === 'config_confirmed') {
           console.log('✅ User name configured on server:', data.user_name)
         } else if (data.type === 'summary') {
-          console.log('📊 Summary received:', data.data)
+          console.log('📊 ========== SUMMARY RECEIVED ==========')
+          console.log('📊 Full message:', JSON.stringify(data, null, 2))
           console.log('📊 Summary object:', JSON.stringify(data.data.summary, null, 2))
           console.log('📊 Stats object:', JSON.stringify(data.data.stats, null, 2))
           console.log('📊 Current segments in ref:', liveSegmentsRef.current.length)
-          console.log('📊 Segments:', liveSegmentsRef.current)
+          console.log('📊 First 3 segments:', liveSegmentsRef.current.slice(0, 3))
           
           setTranscript((prev) => {
             const finalTranscript = {
@@ -181,8 +182,9 @@ export default function App() {
               stats: data.data.stats,
               segments: liveSegmentsRef.current  // Always use segments from ref
             }
-            console.log('📊 Setting final transcript:', finalTranscript)
-            console.log('📊 Final transcript segments count:', finalTranscript.segments.length)
+            console.log('📊 Setting final transcript with', finalTranscript.segments.length, 'segments')
+            console.log('📊 Summary keys:', Object.keys(finalTranscript.summary || {}))
+            console.log('📊 Has overall summary?', !!finalTranscript.summary?.overall)
             return finalTranscript
           })
           
@@ -190,6 +192,8 @@ export default function App() {
             console.log('✅ Resolving summary promise')
             summaryResolveRef.current()
             summaryResolveRef.current = null
+          } else {
+            console.warn('⚠️ Summary received but no resolver waiting!')
           }
         } else if (data.type === 'error') {
           console.error('❌ Server error:', data.message)
@@ -296,33 +300,46 @@ export default function App() {
       console.warn('Error stopping audio', e)
     }
 
+    // Give a small delay to ensure audio processing is complete
+    await new Promise(r => setTimeout(r, 100))
+
     // Now request summary and wait for it
     let summaryPromise = new Promise((resolve) => { summaryResolveRef.current = resolve })
     
     console.log('📤 Sending get_summary command...')
+    console.log('📤 WebSocket ready state:', ws.readyState, '(1 = OPEN)')
+    console.log('📤 Current segments count:', liveSegmentsRef.current.length)
+    
     try {
       const command = JSON.stringify({ command: 'get_summary' })
       console.log('📤 Command string:', command)
       ws.send(command)
       console.log('✅ Summary request sent successfully, waiting for response...')
     } catch (e) {
-      console.warn('❌ Could not send get_summary:', e)
+      console.error('❌ Could not send get_summary:', e)
       if (summaryResolveRef.current) {
         summaryResolveRef.current()
         summaryResolveRef.current = null
       }
     }
 
-    // Wait up to 5 seconds for summary
-    console.log('⏳ Waiting for summary (max 5 seconds)...')
+    // Wait up to 10 seconds for summary (increased from 5)
+    console.log('⏳ Waiting for summary (max 10 seconds)...')
+    const timeoutPromise = new Promise((r) => setTimeout(() => {
+      console.warn('⏱️ TIMEOUT: Summary not received within 10 seconds')
+      console.warn('⏱️ Resolver still waiting?', !!summaryResolveRef.current)
+      console.warn('⏱️ Current segments:', liveSegmentsRef.current.length)
+      r()
+    }, 10000))
+    
     try {
       await Promise.race([
         summaryPromise,
-        new Promise((r) => setTimeout(r, 5000))
+        timeoutPromise
       ])
       console.log('✅ Summary received or timeout reached')
     } catch (e) {
-      console.warn('Summary timeout or error:', e)
+      console.error('Summary timeout or error:', e)
     }
 
     console.log('🧹 Cleaning up summary resolver...')
@@ -424,8 +441,8 @@ export default function App() {
             <div className={cn(
               "rounded-lg p-3 sm:p-4 mt-4 text-xs sm:text-sm",
               permissionError 
-                ? "bg-yellow-50 border-yellow-200 text-yellow-800 border" 
-                : "bg-red-50 border-red-200 text-red-800 border"
+                ? "bg-accent border-accent text-accent-foreground border" 
+                : "bg-destructive/10 border-destructive/20 text-destructive border"
             )}>
               {permissionError ? `Microphone: ${permissionError}` : `Error: ${error}`}
             </div>
@@ -434,8 +451,8 @@ export default function App() {
 
         <div className="lg:col-span-2 space-y-4 sm:space-y-6">
           {liveSegments && liveSegments.length > 0 && (
-            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-              <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4">Live Transcript</h2>
+            <section className="bg-card rounded-lg shadow-card border border-border p-4 sm:p-6">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground mb-3 sm:mb-4">Live Transcript</h2>
               <div className="transcript-container max-h-[400px] sm:max-h-[600px] overflow-y-auto space-y-2">
                 {liveSegments.map((segment, idx) => (
                   <TranscriptBubble
@@ -451,47 +468,47 @@ export default function App() {
           )}
 
           {transcript && (
-            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 mt-0">
-              <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4">Final Transcript</h2>
+            <section className="bg-card rounded-lg shadow-card border border-border p-4 sm:p-6 mt-0">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground mb-3 sm:mb-4">Final Transcript</h2>
               {transcript.summary && (
                 <div className="space-y-4 sm:space-y-6 mb-6 sm:mb-8">
                   <div>
-                    <h3 className="text-sm sm:text-md font-medium text-gray-900 dark:text-white mb-2">Summary</h3>
+                    <h3 className="text-sm sm:text-md font-medium text-foreground mb-2">Summary</h3>
                     {transcript.summary.overall && (
-                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
-                        <strong className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Overall:</strong>
-                        <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">{transcript.summary.overall}</p>
+                      <div className="bg-muted rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
+                        <strong className="block text-xs sm:text-sm font-medium text-foreground mb-1">Overall:</strong>
+                        <p className="text-xs sm:text-sm text-muted-foreground">{transcript.summary.overall}</p>
                       </div>
                     )}
                     {Object.entries(transcript.summary).map(([key, text]) => {
                       if (key === 'overall' || key === 'stats') return null
                       return (
-                        <div key={key} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
-                          <strong className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{key}:</strong>
-                          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">{text}</p>
+                        <div key={key} className="bg-muted rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
+                          <strong className="block text-xs sm:text-sm font-medium text-foreground mb-1">{key}:</strong>
+                          <p className="text-xs sm:text-sm text-muted-foreground">{text}</p>
                         </div>
                       )
                     })}
                   </div>
 
                   {transcript.stats && (
-                    <div className="border-t border-gray-200 dark:border-gray-600 pt-4 sm:pt-6">
-                      <h4 className="text-sm sm:text-md font-medium text-gray-900 dark:text-white mb-3 sm:mb-4">Statistics</h4>
+                    <div className="border-t border-border pt-4 sm:pt-6">
+                      <h4 className="text-sm sm:text-md font-medium text-foreground mb-3 sm:mb-4">Statistics</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4">
-                          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                            Total Speakers: <span className="font-medium">{transcript.stats.total_speakers}</span>
+                        <div className="bg-muted rounded-lg p-3 sm:p-4">
+                          <div className="text-xs sm:text-sm text-muted-foreground">
+                            Total Speakers: <span className="font-medium text-foreground">{transcript.stats.total_speakers}</span>
                           </div>
                         </div>
-                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4">
-                          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                            Total Segments: <span className="font-medium">{transcript.stats.total_segments}</span>
+                        <div className="bg-muted rounded-lg p-3 sm:p-4">
+                          <div className="text-xs sm:text-sm text-muted-foreground">
+                            Total Segments: <span className="font-medium text-foreground">{transcript.stats.total_segments}</span>
                           </div>
                         </div>
                         {transcript.stats.speakers && Object.entries(transcript.stats.speakers).map(([speaker, stats]) => (
-                          <div key={speaker} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4">
-                            <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                              <span className="font-medium">{speaker}</span>: {stats.words} words, {Math.round(stats.duration_seconds)}s speaking time
+                          <div key={speaker} className="bg-muted rounded-lg p-3 sm:p-4">
+                            <div className="text-xs sm:text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground">{speaker}</span>: {stats.words} words, {Math.round(stats.duration_seconds)}s speaking time
                             </div>
                           </div>
                         ))}
@@ -502,7 +519,7 @@ export default function App() {
               )}
 
               <div>
-                <h3 className="text-sm sm:text-md font-medium text-gray-900 dark:text-white mb-3 sm:mb-4">Segments</h3>
+                <h3 className="text-sm sm:text-md font-medium text-foreground mb-3 sm:mb-4">Segments</h3>
                 <div className="transcript-container max-h-[300px] sm:max-h-[400px] overflow-y-auto space-y-2">
                   {transcript.segments && transcript.segments.length ? (
                     transcript.segments.map((segment, idx) => (
@@ -514,7 +531,7 @@ export default function App() {
                       />
                     ))
                   ) : (
-                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 text-center py-4">No segments available</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground text-center py-4">No segments available</p>
                   )}
                 </div>
               </div>

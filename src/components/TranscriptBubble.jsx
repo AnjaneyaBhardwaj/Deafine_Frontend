@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { cn } from '../lib/utils';
 
 const speakerColors = {
-  S1: { bg: 'bg-blue-500', light: 'bg-blue-50', border: 'border-blue-200' },
-  S2: { bg: 'bg-green-500', light: 'bg-green-50', border: 'border-green-200' },
-  S3: { bg: 'bg-purple-500', light: 'bg-purple-50', border: 'border-purple-200' },
-  S4: { bg: 'bg-orange-500', light: 'bg-orange-50', border: 'border-orange-200' },
-  S5: { bg: 'bg-pink-500', light: 'bg-pink-50', border: 'border-pink-200' },
+  S1: { bg: 'bg-primary', light: 'bg-primary/10', border: 'border-primary/20', text: 'text-primary' },
+  S2: { bg: 'bg-secondary', light: 'bg-secondary/10', border: 'border-secondary/20', text: 'text-secondary' },
+  S3: { bg: 'bg-accent', light: 'bg-accent/30', border: 'border-accent/30', text: 'text-accent-foreground' },
+  S4: { bg: 'bg-primary', light: 'bg-primary/5', border: 'border-primary/10', text: 'text-primary' },
+  S5: { bg: 'bg-secondary', light: 'bg-secondary/5', border: 'border-secondary/10', text: 'text-secondary' },
 };
 
 export const TranscriptBubble = ({ 
@@ -18,9 +18,10 @@ export const TranscriptBubble = ({
 }) => {
   const [showAnimation, setShowAnimation] = useState(false);
   const colors = speakerColors[speaker] || { 
-    bg: 'bg-gray-500', 
-    light: 'bg-gray-50', 
-    border: 'border-gray-200' 
+    bg: 'bg-muted', 
+    light: 'bg-muted', 
+    border: 'border-border',
+    text: 'text-muted-foreground'
   };
 
   useEffect(() => {
@@ -42,7 +43,7 @@ export const TranscriptBubble = ({
         'transition-transform duration-300 flex-shrink-0',
         colors.bg,
         isActive && 'scale-110 ring-2 ring-offset-2 ring-opacity-50',
-        isActive && colors.border.replace('border', 'ring')
+        isActive && `ring-${colors.text.replace('text-', '')}`
       )}>
         {speaker}
       </div>
@@ -51,14 +52,14 @@ export const TranscriptBubble = ({
         showAnimation && "animate-fade-in"
       )}>
         <div className={cn(
-          'rounded-2xl py-2 px-3 sm:py-3 sm:px-4 inline-block max-w-full shadow-md',
+          'rounded-2xl py-2 px-3 sm:py-3 sm:px-4 inline-block max-w-full shadow-card',
           'transition-all duration-300',
-          isActive ? cn(colors.light, colors.border, 'border-2') : 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700',
+          isActive ? cn(colors.light, colors.border, 'border-2') : 'bg-card border border-border',
           showAnimation && 'animate-bubble-pop'
         )}>
           <div className="flex items-start justify-between gap-2 sm:gap-3">
             <p className={cn(
-              "text-gray-900 dark:text-gray-100 text-sm sm:text-base leading-relaxed break-words",
+              "text-foreground text-sm sm:text-base leading-relaxed break-words",
               isActive && 'font-medium'
             )}>
               {text}
