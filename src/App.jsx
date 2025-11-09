@@ -1,0 +1,424 @@
+import React, { useEffect, useState, useRef } from 'react'
+import {
+  getSessionStatus,
+  getSessionTranscript,
+  createWebSocketConnection
+} from './api'
+import { useNotification } from './hooks/use-notification'
+import { UserNameInput } from './components/UserNameInput'
+import { Layout } from './components/Layout'
+import { ControlPanel } from './components/ControlPanel'
+import { TranscriptBubble } from './components/TranscriptBubble'
+import { cn } from './lib/utils'
+
+export default function App() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [transcript, setTranscript] = useState(null)
+  const [sessionId, setSessionId] = useState(null)
+  const [userName, setUserName] = useState('')
+  const pollRef = useRef(null)
+  const [recording, setRecording] = useState(false)
+  const mediaRecorderRef = useRef(null)
+  const recordedChunksRef = useRef([])
+  const [permissionError, setPermissionError] = useState(null)
+  const wsRef = useRef(null)
+  const audioCtxRef = useRef(null)
+  const processorRef = useRef(null)
+  const sourceRef = useRef(null)
+  const mediaStreamRef = useRef(null)
+  const [liveSegments, setLiveSegments] = useState([])
+  const summaryResolveRef = useRef(null)
+  const sessionIdRef = useRef(null)
+  const liveSegmentsRef = useRef([])
+  const { notify } = useNotification()
+
+  useEffect(() => {
+    // poll session status when sessionId set
+    if (!sessionId) return
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await getSessionStatus(sessionId)
+        if (s.status === 'completed' || s.status === 'failed') {
+          clearInterval(pollRef.current)
+          pollRef.current = null
+          if (s.status === 'completed') {
+            const t = await getSessionTranscript(sessionId)
+            setTranscript(t)
+            setLoading(false)
+          } else {
+            setLoading(false)
+          }
+        }
+      } catch (err) {
+        setError(err.message || String(err))
+        setLoading(false)
+        if (pollRef.current) {
+          clearInterval(pollRef.current)
+          pollRef.current = null
+        }
+      }
+    }, 1500)
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [sessionId])
+
+  // upload audio is removed — live recording only
+
+  // --- Live recording helpers ---
+  function startRecording() {
+    setPermissionError(null)
+    recordedChunksRef.current = []
+    startWsRecording()
+  }
+
+  async function stopRecordingAndUpload() {
+    return stopWsRecording()
+  }
+
+  // WebSocket setup and message handling
+  const setupWebSocket = () => {
+    wsRef.current = createWebSocketConnection()
+    
+    wsRef.current.onopen = () => {
+      console.log('WebSocket connected')
+      // Set user name for haptic feedback if available
+      if (userName) {
+        wsRef.current.send(JSON.stringify({
+          command: 'set_name',
+          user_name: userName
+        }))
+      }
+    }
+
+    wsRef.current.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+
+      if (data.type === 'transcript') {
+        // Handle transcript updates
+        setLiveSegments(prev => [...prev, data.segment])
+
+        // Server indicates haptic -> always notify (haptic always active)
+        if (data.segment.haptic) {
+          notify({
+            title: 'Name Mentioned!',
+            body: `${data.segment.speaker_id} mentioned your name: "${data.segment.text}"`,
+            haptic: true
+          })
+        }
+      } else if (data.type === 'haptic') {
+        // Additional haptic event — always notify
+        notify({
+          title: 'Name Mentioned!',
+          body: `${data.speaker_id} mentioned your name: "${data.text}"`,
+          haptic: true
+        })
+      }
+    }
+
+    wsRef.current.onerror = (error) => {
+      console.error('WebSocket error:', error)
+      setError('WebSocket connection error')
+    }
+
+    wsRef.current.onclose = () => {
+      console.log('WebSocket closed')
+    }
+  }
+
+  function wsUrlForBase() {
+    const base = import.meta.env.VITE_API_BASE || window.location.origin.replace(/:\d+$/, ':8000')
+    return base.replace(/^http/, 'ws') + '/ws/transcribe'
+  }
+
+  async function startWsRecording() {
+    setPermissionError(null)
+    setLiveSegments([])
+    setTranscript(null)
+    setSessionId(null)
+
+    const wsUrl = wsUrlForBase()
+    const ws = new WebSocket(wsUrl)
+    ws.binaryType = 'arraybuffer'
+    wsRef.current = ws
+
+    ws.addEventListener('open', () => {
+      setRecording(true)
+    })
+
+    ws.addEventListener('message', (ev) => {
+      try {
+        const data = JSON.parse(ev.data)
+        if (data.type === 'connected') {
+          setSessionId(data.session_id)
+          sessionIdRef.current = data.session_id
+        } else if (data.type === 'transcript') {
+          setLiveSegments((s) => {
+            const next = [...s, data.segment]
+            liveSegmentsRef.current = next
+            return next
+          })
+        } else if (data.type === 'summary') {
+          setTranscript((prev) => ({
+            ...(prev || {}),
+            session_id: sessionIdRef.current,
+            summary: data.data.summary,
+            stats: data.data.stats,
+            segments: (prev && prev.segments && prev.segments.length) ? prev.segments : liveSegmentsRef.current
+          }))
+          if (summaryResolveRef.current) summaryResolveRef.current()
+        } else if (data.type === 'error') {
+          setError(data.message || 'WebSocket error')
+        }
+      } catch (e) {
+        console.error('WS message parse error', e)
+      }
+    })
+
+    ws.addEventListener('close', () => {
+      setRecording(false)
+      wsRef.current = null
+    })
+
+    ws.addEventListener('error', (ev) => {
+      console.error('WS error', ev)
+      setError('WebSocket error')
+    })
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      audioCtxRef.current = audioCtx
+      const source = audioCtx.createMediaStreamSource(stream)
+      sourceRef.current = source
+
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1)
+      processorRef.current = processor
+
+      processor.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0)
+        const downsampled = downsampleBuffer(input, audioCtx.sampleRate, 16000)
+        if (!downsampled) return
+        const int16 = floatTo16BitPCM(downsampled)
+        try {
+          ws.send(int16.buffer)
+        } catch (err) {
+          console.warn('WS send failed', err)
+        }
+      }
+
+      source.connect(processor)
+      processor.connect(audioCtx.destination)
+    } catch (err) {
+      setPermissionError('Microphone permission denied or unavailable: ' + (err.message || err))
+    }
+  }
+
+  async function stopWsRecording() {
+    const ws = wsRef.current
+    if (!ws) return
+
+    let summaryPromise = new Promise((resolve) => { summaryResolveRef.current = resolve })
+    try {
+      ws.send(JSON.stringify({ command: 'get_summary' }))
+    } catch (e) {
+      console.warn('Could not send get_summary', e)
+    }
+
+    try {
+      await Promise.race([
+        summaryPromise,
+        new Promise((r) => setTimeout(r, 1800))
+      ])
+    } catch (e) {
+      // ignore
+    }
+
+    try {
+      if (processorRef.current) {
+        processorRef.current.disconnect()
+        processorRef.current.onaudioprocess = null
+        processorRef.current = null
+      }
+      if (sourceRef.current) {
+        try { sourceRef.current.disconnect() } catch {}
+        sourceRef.current = null
+      }
+      if (audioCtxRef.current) {
+        try { audioCtxRef.current.close() } catch {}
+        audioCtxRef.current = null
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop())
+        mediaStreamRef.current = null
+      }
+    } catch (e) {
+      console.warn('Error stopping audio', e)
+    }
+
+    try { ws.close() } catch {}
+    wsRef.current = null
+    setRecording(false)
+
+    setTranscript((prev) => ({ ...(prev || {}), session_id: sessionIdRef.current, segments: liveSegmentsRef.current }))
+    liveSegmentsRef.current = []
+    setLiveSegments([])
+  }
+
+  function downsampleBuffer(buffer, sampleRate, outSampleRate) {
+    if (outSampleRate === sampleRate) return buffer
+    const sampleRateRatio = sampleRate / outSampleRate
+    const newLength = Math.round(buffer.length / sampleRateRatio)
+    const result = new Float32Array(newLength)
+    let offsetResult = 0
+    let offsetBuffer = 0
+    while (offsetResult < result.length) {
+      const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio)
+      let accum = 0, count = 0
+      for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+        accum += buffer[i]
+        count++
+      }
+      result[offsetResult] = count ? accum / count : 0
+      offsetResult++
+      offsetBuffer = nextOffsetBuffer
+    }
+    return result
+  }
+
+  function floatTo16BitPCM(float32Array) {
+    const l = float32Array.length
+    const buffer = new ArrayBuffer(l * 2)
+    const view = new DataView(buffer)
+    let offset = 0
+    for (let i = 0; i < l; i++, offset += 2) {
+      let s = Math.max(-1, Math.min(1, float32Array[i]))
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+    }
+    return new Int16Array(buffer)
+  }
+
+  // Haptic feedback is always active by design
+
+  return (
+    <Layout rightHeader={
+      <UserNameInput value={userName} onChange={setUserName} className="max-w-[200px]" />
+    }>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <aside className="lg:col-span-1">
+          <ControlPanel
+            onStartRecording={startRecording}
+            onStopRecording={stopRecordingAndUpload}
+            isRecording={recording}
+            isLoading={loading}
+          />
+
+          {(permissionError || error) && (
+            <div className={cn(
+              "rounded-lg p-4 mt-4 text-sm",
+              permissionError 
+                ? "bg-yellow-50 border-yellow-200 text-yellow-800 border" 
+                : "bg-red-50 border-red-200 text-red-800 border"
+            )}>
+              {permissionError ? `Microphone: ${permissionError}` : `Error: ${error}`}
+            </div>
+          )}
+        </aside>
+
+        <div className="lg:col-span-2 space-y-6">
+          {liveSegments && liveSegments.length > 0 && (
+            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Live Transcript</h2>
+              <div className="transcript-container max-h-[600px] overflow-y-auto space-y-2">
+                {liveSegments.map((segment, idx) => (
+                  <TranscriptBubble
+                    key={idx}
+                    speaker={segment.speaker_id}
+                    text={segment.text}
+                    isActive={idx === liveSegments.length - 1}
+                    isLatest={idx === liveSegments.length - 1}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {transcript && (
+            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-0">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Final Transcript</h2>
+              {transcript.summary && (
+                <div className="space-y-6 mb-8">
+                  <div>
+                    <h3 className="text-md font-medium text-gray-900 dark:text-white mb-2">Summary</h3>
+                    {transcript.summary.overall && (
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+                        <strong className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Overall:</strong>
+                        <p className="text-gray-600 dark:text-gray-300">{transcript.summary.overall}</p>
+                      </div>
+                    )}
+                    {Object.entries(transcript.summary).map(([key, text]) => {
+                      if (key === 'overall' || key === 'stats') return null
+                      return (
+                        <div key={key} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+                          <strong className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{key}:</strong>
+                          <p className="text-gray-600 dark:text-gray-300">{text}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {transcript.summary.stats && (
+                    <div className="border-t border-gray-200 dark:border-gray-600 pt-6">
+                      <h4 className="text-md font-medium text-gray-900 dark:text-white mb-4">Statistics</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                          <div className="text-sm text-gray-600 dark:text-gray-300">
+                            Total Speakers: <span className="font-medium">{transcript.summary.stats.total_speakers}</span>
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                          <div className="text-sm text-gray-600 dark:text-gray-300">
+                            Total Segments: <span className="font-medium">{transcript.summary.stats.total_segments}</span>
+                          </div>
+                        </div>
+                        {transcript.summary.stats.speakers && Object.entries(transcript.summary.stats.speakers).map(([speaker, stats]) => (
+                          <div key={speaker} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                            <div className="text-sm text-gray-600 dark:text-gray-300">
+                              <span className="font-medium">{speaker}</span>: {stats.words} words, {Math.round(stats.duration_seconds)}s speaking time
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4">Segments</h3>
+                <div className="transcript-container max-h-[400px] overflow-y-auto space-y-2">
+                  {transcript.segments && transcript.segments.length ? (
+                    transcript.segments.map((segment, idx) => (
+                      <TranscriptBubble
+                        key={idx}
+                        speaker={segment.speaker_id}
+                        text={segment.text}
+                        isActive={false}
+                      />
+                    ))
+                  ) : (
+                    <p className="text-gray-500 dark:text-gray-400 text-center py-4">No segments available</p>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    </Layout>
+  )
+}
