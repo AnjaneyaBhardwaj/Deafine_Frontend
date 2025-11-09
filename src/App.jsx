@@ -9,6 +9,7 @@ import { UserNameInput } from './components/UserNameInput'
 import { Layout } from './components/Layout'
 import { ControlPanel } from './components/ControlPanel'
 import { TranscriptBubble } from './components/TranscriptBubble'
+import { NotificationPopup } from './components/NotificationPopup'
 import { cn } from './lib/utils'
 
 export default function App() {
@@ -31,8 +32,36 @@ export default function App() {
   const summaryResolveRef = useRef(null)
   const sessionIdRef = useRef(null)
   const liveSegmentsRef = useRef([])
-  const { notify } = useNotification()
+  const { notify, visualNotification, clearVisualNotification } = useNotification()
   const isWebSocketSession = useRef(false)  // Track if this is a WS session
+
+  // Debug: Log when visualNotification changes
+  useEffect(() => {
+    console.log('🔔 App.jsx - visualNotification changed:', visualNotification);
+  }, [visualNotification]);
+
+  // Send user name to server when it changes during an active session
+  useEffect(() => {
+    if (userName && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log('📤 Updating user name on server:', userName)
+      wsRef.current.send(JSON.stringify({
+        command: 'set_name',
+        user_name: userName
+      }))
+    }
+  }, [userName])
+
+  // Test notification function
+  const handleTestNotification = () => {
+    console.log('🧪 Testing notification with name:', userName)
+    notify({
+      title: 'Test Notification!',
+      body: userName 
+        ? `This is how you'll be notified when "${userName}" is mentioned.`
+        : 'Enter your name above to test personalized notifications.',
+      haptic: true
+    })
+  }
 
   useEffect(() => {
     // Poll session status ONLY for file upload sessions, NOT for WebSocket sessions
@@ -90,58 +119,6 @@ export default function App() {
     return stopWsRecording()
   }
 
-  // WebSocket setup and message handling
-  const setupWebSocket = () => {
-    wsRef.current = createWebSocketConnection()
-    
-    wsRef.current.onopen = () => {
-      console.log('WebSocket connected')
-      // Set user name for haptic feedback if available
-      if (userName) {
-        wsRef.current.send(JSON.stringify({
-          command: 'set_name',
-          user_name: userName
-        }))
-      }
-    }
-
-    wsRef.current.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-
-      if (data.type === 'transcript') {
-        // Handle transcript updates
-        setLiveSegments(prev => [...prev, data.segment])
-
-        // Server indicates haptic -> always notify (haptic always active)
-        if (data.segment.haptic) {
-          notify({
-            title: 'Name Mentioned!',
-            body: `${data.segment.speaker_id} mentioned your name: "${data.segment.text}"`,
-            haptic: true
-          })
-        }
-      } else if (data.type === 'haptic') {
-        // Additional haptic event — always notify
-        notify({
-          title: 'Name Mentioned!',
-          body: `${data.speaker_id} mentioned your name: "${data.text}"`,
-          haptic: true
-        })
-      }
-    }
-
-    wsRef.current.onerror = (error) => {
-      console.error('WebSocket error:', error)
-      setError('WebSocket connection error')
-    }
-
-    wsRef.current.onclose = () => {
-      console.log('WebSocket closed')
-    }
-  }
-
-  // WebSocket URL comes from API base; no itlhost fallback
-
   async function startWsRecording() {
     setPermissionError(null)
     setLiveSegments([])
@@ -157,6 +134,15 @@ export default function App() {
     ws.addEventListener('open', () => {
       console.log('✅ WebSocket opened successfully')
       setRecording(true)
+      
+      // Send user name for haptic feedback if available
+      if (userName) {
+        console.log('📤 Sending user name to server:', userName)
+        ws.send(JSON.stringify({
+          command: 'set_name',
+          user_name: userName
+        }))
+      }
     })
 
     ws.addEventListener('message', (ev) => {
@@ -173,6 +159,26 @@ export default function App() {
             liveSegmentsRef.current = next
             return next
           })
+          
+          // Check if haptic feedback should be triggered
+          if (data.segment.haptic) {
+            console.log('📳 Haptic triggered for segment:', data.segment)
+            notify({
+              title: 'Name Mentioned!',
+              body: `${data.segment.speaker_id} mentioned your name: "${data.segment.text}"`,
+              haptic: true
+            })
+          }
+        } else if (data.type === 'haptic') {
+          // Dedicated haptic event
+          console.log('📳 Dedicated haptic event:', data)
+          notify({
+            title: 'Name Mentioned!',
+            body: `${data.speaker_id} mentioned your name: "${data.text}"`,
+            haptic: true
+          })
+        } else if (data.type === 'config_confirmed') {
+          console.log('✅ User name configured on server:', data.user_name)
         } else if (data.type === 'summary') {
           console.log('📊 Summary received:', data.data)
           console.log('📊 Summary object:', JSON.stringify(data.data.summary, null, 2))
@@ -405,9 +411,19 @@ export default function App() {
   // Haptic feedback is always active by design
 
   return (
-    <Layout rightHeader={
-      <UserNameInput value={userName} onChange={setUserName} className="max-w-[200px]" />
-    }>
+    <>
+      <NotificationPopup 
+        notification={visualNotification} 
+        onClose={clearVisualNotification} 
+      />
+      <Layout rightHeader={
+        <UserNameInput 
+          value={userName} 
+          onChange={setUserName} 
+          onTest={handleTestNotification}
+          className="max-w-[200px]" 
+        />
+      }>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <aside className="lg:col-span-1">
           <ControlPanel
@@ -520,5 +536,6 @@ export default function App() {
         </div>
       </div>
     </Layout>
+    </>
   )
 }
