@@ -50,7 +50,7 @@ export const NotificationPopup = ({ notification, onClose }) => {
   return (
     <div
       className={cn(
-        "fixed top-4 right-4 z-50 max-w-sm w-full sm:w-96",
+        "fixed top-3 right-3 sm:top-4 sm:right-4 z-50 max-w-[calc(100vw-1.5rem)] sm:max-w-sm w-full sm:w-96",
         "transition-all duration-300 ease-in-out",
         isVisible && !isLeaving
           ? "translate-x-0 opacity-100"
@@ -60,25 +60,25 @@ export const NotificationPopup = ({ notification, onClose }) => {
       <div
         className={cn(
           "bg-gradient-to-r from-blue-500 to-purple-600",
-          "text-white rounded-lg shadow-2xl p-4",
+          "text-white rounded-lg shadow-2xl p-3 sm:p-4",
           "border-2 border-white/20",
           "backdrop-blur-sm",
           notification.haptic && "animate-pulse-slow"
         )}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-start justify-between gap-2 sm:gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 sm:gap-2 mb-1">
               {notification.haptic && (
-                <span className="text-2xl" role="img" aria-label="notification">
+                <span className="text-xl sm:text-2xl flex-shrink-0" role="img" aria-label="notification">
                   📳
                 </span>
               )}
-              <h3 className="font-bold text-lg leading-tight">
+              <h3 className="font-bold text-base sm:text-lg leading-tight truncate">
                 {notification.title}
               </h3>
             </div>
-            <p className="text-sm text-white/90 leading-relaxed">
+            <p className="text-xs sm:text-sm text-white/90 leading-relaxed break-words">
               {notification.body}
             </p>
           </div>

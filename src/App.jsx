@@ -51,18 +51,6 @@ export default function App() {
     }
   }, [userName])
 
-  // Test notification function
-  const handleTestNotification = () => {
-    console.log('🧪 Testing notification with name:', userName)
-    notify({
-      title: 'Test Notification!',
-      body: userName 
-        ? `This is how you'll be notified when "${userName}" is mentioned.`
-        : 'Enter your name above to test personalized notifications.',
-      haptic: true
-    })
-  }
-
   useEffect(() => {
     // Poll session status ONLY for file upload sessions, NOT for WebSocket sessions
     console.log('📡 Session polling useEffect triggered. SessionId:', sessionId, 'isWebSocketSession:', isWebSocketSession.current)
@@ -420,11 +408,10 @@ export default function App() {
         <UserNameInput 
           value={userName} 
           onChange={setUserName} 
-          onTest={handleTestNotification}
-          className="max-w-[200px]" 
+          className="max-w-full sm:max-w-[200px]" 
         />
       }>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <aside className="lg:col-span-1">
           <ControlPanel
             onStartRecording={startRecording}
@@ -435,7 +422,7 @@ export default function App() {
 
           {(permissionError || error) && (
             <div className={cn(
-              "rounded-lg p-4 mt-4 text-sm",
+              "rounded-lg p-3 sm:p-4 mt-4 text-xs sm:text-sm",
               permissionError 
                 ? "bg-yellow-50 border-yellow-200 text-yellow-800 border" 
                 : "bg-red-50 border-red-200 text-red-800 border"
@@ -445,11 +432,11 @@ export default function App() {
           )}
         </aside>
 
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
           {liveSegments && liveSegments.length > 0 && (
-            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Live Transcript</h2>
-              <div className="transcript-container max-h-[600px] overflow-y-auto space-y-2">
+            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4">Live Transcript</h2>
+              <div className="transcript-container max-h-[400px] sm:max-h-[600px] overflow-y-auto space-y-2">
                 {liveSegments.map((segment, idx) => (
                   <TranscriptBubble
                     key={idx}
@@ -464,46 +451,46 @@ export default function App() {
           )}
 
           {transcript && (
-            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-0">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Final Transcript</h2>
+            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 mt-0">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4">Final Transcript</h2>
               {transcript.summary && (
-                <div className="space-y-6 mb-8">
+                <div className="space-y-4 sm:space-y-6 mb-6 sm:mb-8">
                   <div>
-                    <h3 className="text-md font-medium text-gray-900 dark:text-white mb-2">Summary</h3>
+                    <h3 className="text-sm sm:text-md font-medium text-gray-900 dark:text-white mb-2">Summary</h3>
                     {transcript.summary.overall && (
-                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
-                        <strong className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Overall:</strong>
-                        <p className="text-gray-600 dark:text-gray-300">{transcript.summary.overall}</p>
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
+                        <strong className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Overall:</strong>
+                        <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">{transcript.summary.overall}</p>
                       </div>
                     )}
                     {Object.entries(transcript.summary).map(([key, text]) => {
                       if (key === 'overall' || key === 'stats') return null
                       return (
-                        <div key={key} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
-                          <strong className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{key}:</strong>
-                          <p className="text-gray-600 dark:text-gray-300">{text}</p>
+                        <div key={key} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
+                          <strong className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{key}:</strong>
+                          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">{text}</p>
                         </div>
                       )
                     })}
                   </div>
 
                   {transcript.stats && (
-                    <div className="border-t border-gray-200 dark:border-gray-600 pt-6">
-                      <h4 className="text-md font-medium text-gray-900 dark:text-white mb-4">Statistics</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                          <div className="text-sm text-gray-600 dark:text-gray-300">
+                    <div className="border-t border-gray-200 dark:border-gray-600 pt-4 sm:pt-6">
+                      <h4 className="text-sm sm:text-md font-medium text-gray-900 dark:text-white mb-3 sm:mb-4">Statistics</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4">
+                          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
                             Total Speakers: <span className="font-medium">{transcript.stats.total_speakers}</span>
                           </div>
                         </div>
-                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                          <div className="text-sm text-gray-600 dark:text-gray-300">
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4">
+                          <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
                             Total Segments: <span className="font-medium">{transcript.stats.total_segments}</span>
                           </div>
                         </div>
                         {transcript.stats.speakers && Object.entries(transcript.stats.speakers).map(([speaker, stats]) => (
-                          <div key={speaker} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <div className="text-sm text-gray-600 dark:text-gray-300">
+                          <div key={speaker} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 sm:p-4">
+                            <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
                               <span className="font-medium">{speaker}</span>: {stats.words} words, {Math.round(stats.duration_seconds)}s speaking time
                             </div>
                           </div>
@@ -515,8 +502,8 @@ export default function App() {
               )}
 
               <div>
-                <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4">Segments</h3>
-                <div className="transcript-container max-h-[400px] overflow-y-auto space-y-2">
+                <h3 className="text-sm sm:text-md font-medium text-gray-900 dark:text-white mb-3 sm:mb-4">Segments</h3>
+                <div className="transcript-container max-h-[300px] sm:max-h-[400px] overflow-y-auto space-y-2">
                   {transcript.segments && transcript.segments.length ? (
                     transcript.segments.map((segment, idx) => (
                       <TranscriptBubble
@@ -527,7 +514,7 @@ export default function App() {
                       />
                     ))
                   ) : (
-                    <p className="text-gray-500 dark:text-gray-400 text-center py-4">No segments available</p>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 text-center py-4">No segments available</p>
                   )}
                 </div>
               </div>
