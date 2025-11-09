@@ -1,4 +1,6 @@
-const API_BASE_URL = 'https://deafine-backend.onrender.com';
+// Allow override via Vite env variable; default to production backend
+// (import.meta.env.* is available in Vite build environment)
+const API_BASE_URL = import.meta.env?.VITE_API_BASE || 'https://deafine-backend.onrender.com';
 
 // Health check
 export const checkHealth = async () => {
@@ -60,15 +62,16 @@ export const postTranscribeStream = async (audioChunk) => {
 
 // WebSocket connection for real-time transcription
 export const createWebSocketConnection = () => {
-  // use the same base URL as the REST API and switch protocol to ws/wss
-  try {
-    const url = new URL(API_BASE_URL);
-    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    return new WebSocket(`${protocol}//${url.host}/ws/transcribe`);
-  } catch (e) {
-    // fallback to localhost websocket
-    return new WebSocket(`ws://${API_BASE_URL}/ws/transcribe`);
-  }
+  // Build ws/wss URL from API_BASE_URL robustly
+  const base = new URL(API_BASE_URL);
+  base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+  // Ensure path joins cleanly even if base had a trailing slash
+  base.pathname = base.pathname.replace(/\/+$/, '') + '/ws/transcribe';
+  base.search = '';
+  base.hash = '';
+  const wsUrl = base.toString();
+  console.log('🔌 Connecting WebSocket to:', wsUrl);
+  return new WebSocket(wsUrl);
 };
 
 // Get all sessions

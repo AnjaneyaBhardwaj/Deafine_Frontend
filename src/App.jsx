@@ -32,11 +32,18 @@ export default function App() {
   const sessionIdRef = useRef(null)
   const liveSegmentsRef = useRef([])
   const { notify } = useNotification()
+  const isWebSocketSession = useRef(false)  // Track if this is a WS session
 
   useEffect(() => {
-    // poll session status when sessionId set
-    if (!sessionId) return
+    // Poll session status ONLY for file upload sessions, NOT for WebSocket sessions
+    console.log('📡 Session polling useEffect triggered. SessionId:', sessionId, 'isWebSocketSession:', isWebSocketSession.current)
+    
+    if (!sessionId || isWebSocketSession.current) {
+      console.log('📡 Skipping polling (WebSocket session or no sessionId)')
+      return
+    }
 
+    console.log('📡 Starting REST API polling for session:', sessionId)
     pollRef.current = setInterval(async () => {
       try {
         const s = await getSessionStatus(sessionId)
@@ -52,7 +59,11 @@ export default function App() {
           }
         }
       } catch (err) {
-        setError(err.message || String(err))
+        console.error('Session polling error:', err.message)
+        // Don't show error for WebSocket sessions
+        if (!isWebSocketSession.current) {
+          setError(err.message || String(err))
+        }
         setLoading(false)
         if (pollRef.current) {
           clearInterval(pollRef.current)
@@ -129,32 +140,33 @@ export default function App() {
     }
   }
 
-  function wsUrlForBase() {
-    const base = import.meta.env.VITE_API_BASE || window.location.origin.replace(/:\d+$/, ':8000')
-    return base.replace(/^http/, 'ws') + '/ws/transcribe'
-  }
+  // WebSocket URL comes from API base; no itlhost fallback
 
   async function startWsRecording() {
     setPermissionError(null)
     setLiveSegments([])
     setTranscript(null)
     setSessionId(null)
+    setError(null)  // Clear previous errors
+    isWebSocketSession.current = true  // Mark this as a WebSocket session
 
-    const wsUrl = wsUrlForBase()
-    const ws = new WebSocket(wsUrl)
+  const ws = createWebSocketConnection()
     ws.binaryType = 'arraybuffer'
     wsRef.current = ws
 
     ws.addEventListener('open', () => {
+      console.log('✅ WebSocket opened successfully')
       setRecording(true)
     })
 
     ws.addEventListener('message', (ev) => {
       try {
         const data = JSON.parse(ev.data)
+        console.log('📨 WS message:', data.type, data)
         if (data.type === 'connected') {
           setSessionId(data.session_id)
           sessionIdRef.current = data.session_id
+          console.log('🆔 Session ID:', data.session_id)
         } else if (data.type === 'transcript') {
           setLiveSegments((s) => {
             const next = [...s, data.segment]
@@ -162,15 +174,31 @@ export default function App() {
             return next
           })
         } else if (data.type === 'summary') {
-          setTranscript((prev) => ({
-            ...(prev || {}),
-            session_id: sessionIdRef.current,
-            summary: data.data.summary,
-            stats: data.data.stats,
-            segments: (prev && prev.segments && prev.segments.length) ? prev.segments : liveSegmentsRef.current
-          }))
-          if (summaryResolveRef.current) summaryResolveRef.current()
+          console.log('📊 Summary received:', data.data)
+          console.log('📊 Summary object:', JSON.stringify(data.data.summary, null, 2))
+          console.log('📊 Stats object:', JSON.stringify(data.data.stats, null, 2))
+          console.log('📊 Current segments in ref:', liveSegmentsRef.current.length)
+          console.log('📊 Segments:', liveSegmentsRef.current)
+          
+          setTranscript((prev) => {
+            const finalTranscript = {
+              session_id: sessionIdRef.current,
+              summary: data.data.summary,
+              stats: data.data.stats,
+              segments: liveSegmentsRef.current  // Always use segments from ref
+            }
+            console.log('📊 Setting final transcript:', finalTranscript)
+            console.log('📊 Final transcript segments count:', finalTranscript.segments.length)
+            return finalTranscript
+          })
+          
+          if (summaryResolveRef.current) {
+            console.log('✅ Resolving summary promise')
+            summaryResolveRef.current()
+            summaryResolveRef.current = null
+          }
         } else if (data.type === 'error') {
+          console.error('❌ Server error:', data.message)
           setError(data.message || 'WebSocket error')
         }
       } catch (e) {
@@ -178,14 +206,36 @@ export default function App() {
       }
     })
 
-    ws.addEventListener('close', () => {
+    ws.addEventListener('close', (ev) => {
+      console.warn('🔌 WS closed', { code: ev.code, reason: ev.reason });
       setRecording(false)
       wsRef.current = null
+      
+      // Provide user-friendly error messages based on close code
+      let errorMsg = '';
+      if (ev.code === 1000 || ev.code === 1005) {
+        // 1000 = Normal closure
+        // 1005 = No status received (browser closes connection cleanly)
+        console.log('WebSocket closed normally');
+        return;
+      } else if (ev.code === 1006) {
+        errorMsg = 'Connection lost. Server may have restarted or timed out.';
+      } else if (ev.code === 1008) {
+        errorMsg = 'Server rejected connection. Check backend configuration.';
+      } else if (ev.code === 1011) {
+        errorMsg = 'Server error. Check backend logs.';
+      } else if (ev.reason) {
+        errorMsg = `Connection closed: ${ev.reason}`;
+      } else {
+        errorMsg = `Connection closed (code ${ev.code})`;
+      }
+      
+      setError(errorMsg);
     })
 
     ws.addEventListener('error', (ev) => {
-      console.error('WS error', ev)
-      setError('WebSocket error')
+      console.error('❌ WS error event', ev);
+      setError('WebSocket connection failed. Check if backend is running.');
     })
 
     try {
@@ -220,24 +270,16 @@ export default function App() {
 
   async function stopWsRecording() {
     const ws = wsRef.current
-    if (!ws) return
-
-    let summaryPromise = new Promise((resolve) => { summaryResolveRef.current = resolve })
-    try {
-      ws.send(JSON.stringify({ command: 'get_summary' }))
-    } catch (e) {
-      console.warn('Could not send get_summary', e)
+    if (!ws) {
+      console.warn('No WebSocket to stop')
+      return
     }
 
-    try {
-      await Promise.race([
-        summaryPromise,
-        new Promise((r) => setTimeout(r, 1800))
-      ])
-    } catch (e) {
-      // ignore
-    }
-
+    console.log('🛑 Stopping recording, requesting summary...')
+    console.log('🛑 WebSocket state:', ws.readyState, '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)')
+    console.log('🛑 Current segments in ref:', liveSegmentsRef.current.length)
+    
+    // First, stop the audio processing to prevent more data being sent
     try {
       if (processorRef.current) {
         processorRef.current.disconnect()
@@ -260,11 +302,69 @@ export default function App() {
       console.warn('Error stopping audio', e)
     }
 
-    try { ws.close() } catch {}
+    // Now request summary and wait for it
+    let summaryPromise = new Promise((resolve) => { summaryResolveRef.current = resolve })
+    
+    console.log('📤 Sending get_summary command...')
+    try {
+      const command = JSON.stringify({ command: 'get_summary' })
+      console.log('📤 Command string:', command)
+      ws.send(command)
+      console.log('✅ Summary request sent successfully, waiting for response...')
+    } catch (e) {
+      console.warn('❌ Could not send get_summary:', e)
+      if (summaryResolveRef.current) {
+        summaryResolveRef.current()
+        summaryResolveRef.current = null
+      }
+    }
+
+    // Wait up to 5 seconds for summary
+    console.log('⏳ Waiting for summary (max 5 seconds)...')
+    try {
+      await Promise.race([
+        summaryPromise,
+        new Promise((r) => setTimeout(r, 5000))
+      ])
+      console.log('✅ Summary received or timeout reached')
+    } catch (e) {
+      console.warn('Summary timeout or error:', e)
+    }
+
+    console.log('🧹 Cleaning up summary resolver...')
+    // Clean up summary resolver
+    summaryResolveRef.current = null
+
+    // Close the WebSocket connection gracefully
+    try { 
+      ws.close(1000, 'Recording stopped by user')  // 1000 = normal closure
+      console.log('🔌 Closing WebSocket connection')
+    } catch (e) {
+      console.warn('Error closing WebSocket:', e)
+    }
+    
     wsRef.current = null
     setRecording(false)
+    isWebSocketSession.current = false  // Reset flag
 
-    setTranscript((prev) => ({ ...(prev || {}), session_id: sessionIdRef.current, segments: liveSegmentsRef.current }))
+    // Ensure we set final transcript with segments if not already set by summary handler
+    setTranscript((prev) => {
+      // If summary handler already set everything, keep it
+      if (prev && prev.summary && prev.segments && prev.segments.length > 0) {
+        console.log('📝 Final transcript already complete from summary handler')
+        return prev
+      }
+      
+      // Otherwise, ensure segments are saved
+      const finalSegments = liveSegmentsRef.current || []
+      console.log('📝 Ensuring final transcript has segments:', finalSegments.length)
+      return {
+        ...(prev || {}),
+        session_id: sessionIdRef.current,
+        segments: finalSegments
+      }
+    })
+    
     liveSegmentsRef.current = []
     setLiveSegments([])
   }
@@ -371,21 +471,21 @@ export default function App() {
                     })}
                   </div>
 
-                  {transcript.summary.stats && (
+                  {transcript.stats && (
                     <div className="border-t border-gray-200 dark:border-gray-600 pt-6">
                       <h4 className="text-md font-medium text-gray-900 dark:text-white mb-4">Statistics</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                           <div className="text-sm text-gray-600 dark:text-gray-300">
-                            Total Speakers: <span className="font-medium">{transcript.summary.stats.total_speakers}</span>
+                            Total Speakers: <span className="font-medium">{transcript.stats.total_speakers}</span>
                           </div>
                         </div>
                         <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                           <div className="text-sm text-gray-600 dark:text-gray-300">
-                            Total Segments: <span className="font-medium">{transcript.summary.stats.total_segments}</span>
+                            Total Segments: <span className="font-medium">{transcript.stats.total_segments}</span>
                           </div>
                         </div>
-                        {transcript.summary.stats.speakers && Object.entries(transcript.summary.stats.speakers).map(([speaker, stats]) => (
+                        {transcript.stats.speakers && Object.entries(transcript.stats.speakers).map(([speaker, stats]) => (
                           <div key={speaker} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                             <div className="text-sm text-gray-600 dark:text-gray-300">
                               <span className="font-medium">{speaker}</span>: {stats.words} words, {Math.round(stats.duration_seconds)}s speaking time
