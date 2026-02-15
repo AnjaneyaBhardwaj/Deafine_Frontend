@@ -1,6 +1,7 @@
 // Allow override via Vite env variable; default to production backend
 // (import.meta.env.* is available in Vite build environment)
-const API_BASE_URL = import.meta.env?.VITE_API_BASE || 'https://deafine-backend.onrender.com';
+const API_BASE_URL =
+  import.meta.env?.VITE_API_BASE || "https://deafine-backend.onrender.com";
 
 // Health check
 export const checkHealth = async () => {
@@ -11,17 +12,18 @@ export const checkHealth = async () => {
 // Transcribe uploaded file
 export const postTranscribe = async (file) => {
   const formData = new FormData();
-  formData.append('audio_file', file);
+  formData.append("audio_file", file);
+  formData.append("num_speakers", 2);
 
   const response = await fetch(`${API_BASE_URL}/transcribe`, {
-    method: 'POST',
+    method: "POST",
     body: formData,
   });
-  
+
   if (!response.ok) {
-    throw new Error('Failed to transcribe audio');
+    throw new Error("Failed to transcribe audio");
   }
-  
+
   return response.json();
 };
 
@@ -29,16 +31,18 @@ export const postTranscribe = async (file) => {
 export const getSessionStatus = async (sessionId) => {
   const response = await fetch(`${API_BASE_URL}/session/${sessionId}`);
   if (!response.ok) {
-    throw new Error('Failed to get session status');
+    throw new Error("Failed to get session status");
   }
   return response.json();
 };
 
 // Get session transcript
 export const getSessionTranscript = async (sessionId) => {
-  const response = await fetch(`${API_BASE_URL}/session/${sessionId}/transcript`);
+  const response = await fetch(
+    `${API_BASE_URL}/session/${sessionId}/transcript`,
+  );
   if (!response.ok) {
-    throw new Error('Failed to get transcript');
+    throw new Error("Failed to get transcript");
   }
   return response.json();
 };
@@ -46,17 +50,17 @@ export const getSessionTranscript = async (sessionId) => {
 // Stream audio for real-time transcription
 export const postTranscribeStream = async (audioChunk) => {
   const formData = new FormData();
-  formData.append('audio_chunk', audioChunk);
+  formData.append("audio_chunk", audioChunk);
 
   const response = await fetch(`${API_BASE_URL}/transcribe/stream`, {
-    method: 'POST',
+    method: "POST",
     body: formData,
   });
-  
+
   if (!response.ok) {
-    throw new Error('Failed to stream audio');
+    throw new Error("Failed to stream audio");
   }
-  
+
   return response.json();
 };
 
@@ -64,13 +68,13 @@ export const postTranscribeStream = async (audioChunk) => {
 export const createWebSocketConnection = () => {
   // Build ws/wss URL from API_BASE_URL robustly
   const base = new URL(API_BASE_URL);
-  base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+  base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
   // Ensure path joins cleanly even if base had a trailing slash
-  base.pathname = base.pathname.replace(/\/+$/, '') + '/ws/transcribe';
-  base.search = '';
-  base.hash = '';
+  base.pathname = base.pathname.replace(/\/+$/, "") + "/ws/transcribe";
+  base.search = "";
+  base.hash = "";
   const wsUrl = base.toString();
-  console.log('🔌 Connecting WebSocket to:', wsUrl);
+  console.log("🔌 Connecting WebSocket to:", wsUrl);
   return new WebSocket(wsUrl);
 };
 
@@ -78,7 +82,7 @@ export const createWebSocketConnection = () => {
 export const getSessions = async () => {
   const response = await fetch(`${API_BASE_URL}/sessions`);
   if (!response.ok) {
-    throw new Error('Failed to get sessions');
+    throw new Error("Failed to get sessions");
   }
   return response.json();
 };

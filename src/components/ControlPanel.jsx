@@ -8,6 +8,8 @@ export const ControlPanel = ({
   onStopRecording,
   isRecording,
   isLoading,
+  numSpeakers,
+  onNumSpeakersChange,
   className
 }) => {
   return (
@@ -27,6 +29,32 @@ export const ControlPanel = ({
             <span className="w-2 h-2 rounded-full bg-destructive inline-block" /> Live
           </div>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <label htmlFor="num-speakers" className="block text-xs font-medium text-foreground mb-2">
+          Number of Speakers
+        </label>
+        <select
+          id="num-speakers"
+          value={numSpeakers}
+          onChange={(e) => onNumSpeakersChange(Number(e.target.value))}
+          disabled={isRecording}
+          className={cn(
+            'w-full px-3 py-2 rounded-lg text-sm',
+            'bg-background border border-border',
+            'text-foreground',
+            'focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+            'transition-all duration-200'
+          )}
+        >
+          <option value={2}>2 speakers</option>
+          <option value={3}>3 speakers</option>
+          <option value={4}>4 speakers</option>
+          <option value={5}>5 speakers</option>
+          <option value={6}>6 speakers</option>
+        </select>
       </div>
 
       <div className="flex gap-2 sm:gap-3">
